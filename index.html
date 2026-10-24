@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Umore del mercato</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#fff; --text:#1b1f27; --muted:#6b7280; --line:#e5e7eb;
+  --down:#0f9d58; --up:#d93025; --accent:#2563eb;
+  --c1:#2563eb; --cx:#9ca3af; --c2:#e07b00;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#0f1115; --card:#181b22; --text:#e8eaed; --muted:#9aa0a6; --line:#2a2f3a;
+         --down:#34c477; --up:#ff6b5e; --accent:#6ea0ff; --c1:#6ea0ff; --cx:#8a8f98; --c2:#ffa733; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+h1{font-size:20px;margin:0}
+.muted{color:var(--muted)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
+.card .k{font-size:12px;color:var(--muted)} .card .v{font-size:20px;font-weight:600;margin-top:2px}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center}
+input,select,button{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+button{cursor:pointer} button:hover{border-color:var(--accent)}
+.rng{display:flex;gap:6px;align-items:center}
+.rng input{padding:0;width:120px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:12px;color:var(--muted);font-weight:500;white-space:nowrap}
+tbody tr{cursor:pointer} tbody tr:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+tbody tr.sel{background:color-mix(in srgb,var(--accent) 13%,transparent)}
+td.o{white-space:nowrap}
+.odd{font-weight:600} .sub{font-size:12px;color:var(--muted)}
+.dn{color:var(--down)} .upc{color:var(--up)}
+.hl{outline:2px solid color-mix(in srgb,var(--down) 55%,transparent);border-radius:6px;padding:1px 4px}
+.bar{width:70px;height:8px;border-radius:4px;background:var(--line);overflow:hidden;display:inline-block;vertical-align:middle}
+.bar i{display:block;height:100%;background:var(--accent)}
+.badge{font-size:11px;padding:2px 7px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.badge.alta{color:var(--down);border-color:var(--down)} .badge.bassa{color:var(--up);border-color:var(--up)}
+#detail{margin-top:14px}
+#detail h2{font-size:17px;margin:0 0 2px}
+.grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-top:10px}
+@media(max-width:820px){.grid2{grid-template-columns:1fr} .hide-m{display:none}}
+.leg{display:flex;gap:14px;font-size:12px;margin-top:4px}
+.leg span:before{content:"";display:inline-block;width:10px;height:3px;margin-right:5px;vertical-align:middle;background:currentColor}
+.empty{padding:30px;text-align:center;color:var(--muted)}
+table.mini th,table.mini td{padding:6px 8px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Umore del mercato</h1>
+    <div class="muted"><span id="upd"></span> <button id="reload">Aggiorna</button></div>
+  </header>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="filters">
+    <input id="q" placeholder="Cerca squadra…">
+    <select id="lg"><option value="">Tutti i campionati</option></select>
+    <select id="out"><option value="">Tutti gli esiti</option><option>1</option><option>X</option><option>2</option></select>
+    <select id="sort">
+      <option value="score">Ordina: indice</option>
+      <option value="drop">Ordina: calo maggiore</option>
+      <option value="time">Ordina: calcio d'inizio</option>
+    </select>
+    <label class="rng muted">Indice min <input type="range" id="min" min="0" max="100" value="0"> <b id="minv" style="color:var(--text)">0</b></label>
+  </div>
+
+  <div id="tbl"></div>
+  <div id="detail"></div>
+  <p class="muted" style="margin-top:18px;font-size:12px">
+    Le probabilità sono "pulite", cioè senza il margine del bookmaker. L'indice (0-100) combina entità del calo,
+    velocità nelle ultime 6 ore, accordo tra bookmaker e movimento di Pinnacle. È un segnale sul mercato, non una previsione.
+  </p>
+</div>
+
+<script src="data.js"></script>
+<script>
+const D = window.DATA || {events: [], generated: null};
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pc = x => (x * 100).toFixed(1) + '%';
+const chg = x => x == null ? '–' : (x > 0 ? '+' : '') + (x * 100).toFixed(1) + '%';
+const cls = x => x == null ? '' : x < -0.005 ? 'dn' : x > 0.005 ? 'upc' : '';
+const when = t => new Date(t * 1000).toLocaleString('it-IT', {weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+const ago = t => { const m = Math.round((Date.now()/1000 - t) / 60); return m < 1 ? 'adesso' : m < 90 ? m + ' min fa' : Math.round(m/60) + ' ore fa'; };
+
+let selected = null;
+
+function init() {
+  $('#upd').textContent = D.generated ? 'Aggiornato ' + ago(D.generated) : 'Nessun dato: esegui collector.py';
+  const lgs = [...new Set(D.events.map(e => e.league))].sort();
+  $('#lg').innerHTML += lgs.map(l => `<option>${esc(l)}</option>`).join('');
+  ['q', 'lg', 'out', 'sort', 'min'].forEach(id => $('#' + id).addEventListener('input', render));
+  $('#min').addEventListener('input', () => $('#minv').textContent = $('#min').value);
+  $('#reload').onclick = () => location.reload();
+  setInterval(() => location.reload(), 5 * 60 * 1000);
+  render();
+}
+
+function maxDrop(e) { return Math.min(...e.outcomes.map(o => o.ch_open ?? 0)); }
+
+function filtered() {
+  const q = $('#q').value.toLowerCase(), lg = $('#lg').value, out = $('#out').value, min = +$('#min').value;
+  let list = D.events.filter(e =>
+    (!q || (e.home + ' ' + e.away).toLowerCase().includes(q)) &&
+    (!lg || e.league === lg) && (!out || e.top === out) && e.score >= min);
+  const s = $('#sort').value;
+  list.sort(s === 'time' ? (a, b) => a.commence - b.commence
+          : s === 'drop' ? (a, b) => maxDrop(a) - maxDrop(b)
+          : (a, b) => b.score - a.score);
+  return list;
+}
+
+function renderCards(list) {
+  const all = D.events;
+  const strong = all.filter(e => e.score >= 60).length;
+  const best = all.slice().sort((a, b) => maxDrop(a) - maxDrop(b))[0];
+  $('#cards').innerHTML = [
+    ['Partite monitorate', all.length],
+    ['Segnali forti (indice ≥ 60)', strong],
+    ['Calo maggiore', best ? chg(maxDrop(best)) + ' <span class="sub">' + esc(best.home) + '</span>' : '–'],
+    ['Visibili con i filtri', list.length],
+  ].map(([k, v]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+}
+
+function render() {
+  const list = filtered();
+  renderCards(list);
+  if (!list.length) { $('#tbl').innerHTML = '<div class="card empty">Nessuna partita con questi filtri.</div>'; return; }
+  const rows = list.map(e => {
+    const cells = e.outcomes.map(o => {
+      const top = o.name === e.top && e.score >= 40;
+      return `<td class="o"><span class="odd ${top ? 'hl' : ''}">${o.odds.toFixed(2)}</span>
+        <div class="sub ${cls(o.ch_open)}">${chg(o.ch_open)}</div></td>`;
+    }).join('');
+    return `<tr data-id="${esc(e.id)}" class="${e.id === selected ? 'sel' : ''}">
+      <td><b>${esc(e.home)}</b> – <b>${esc(e.away)}</b><div class="sub">${esc(e.league)} · ${when(e.commence)}</div></td>
+      ${cells}
+      <td><span class="bar"><i style="width:${e.score}%"></i></span> <b>${e.score}</b></td>
+      <td class="hide-m"><span class="badge ${e.confidence}">${e.confidence} · ${e.books} book</span></td></tr>`;
+  }).join('');
+  $('#tbl').innerHTML = `<table><thead><tr><th>Partita</th><th>1</th><th>X</th><th>2</th><th>Indice</th><th class="hide-m">Fiducia</th></tr></thead><tbody>${rows}</tbody></table>`;
+  document.querySelectorAll('tbody tr').forEach(tr => tr.onclick = () => { selected = tr.dataset.id; render(); showDetail(); $('#detail').scrollIntoView({behavior:'smooth'}); });
+  if (selected) showDetail();
+}
+
+function chart(e) {
+  const h = e.history, W = 600, H = 220, L = 40, R = 10, T = 10, B = 24;
+  if (h.length < 2) return '<div class="muted">Servono almeno due rilevazioni per il grafico.</div>';
+  const all = h.flatMap(p => p.slice(1));
+  let lo = Math.min(...all), hi = Math.max(...all); const pad = (hi - lo) * 0.15 || 0.02; lo -= pad; hi += pad;
+  const x = t => L + (t - h[0][0]) / (h[h.length-1][0] - h[0][0]) * (W - L - R);
+  const y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const colors = ['var(--c1)', 'var(--cx)', 'var(--c2)'];
+  const lines = [0, 1, 2].map(i => `<polyline fill="none" stroke="${colors[i]}" stroke-width="2" points="${h.map(p => x(p[0]).toFixed(1) + ',' + y(p[i+1]).toFixed(1)).join(' ')}"/>`).join('');
+  const grid = [0, 1, 2, 3].map(k => { const v = lo + (hi - lo) * k / 3; return `<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${(v*100).toFixed(0)}%</text>`; }).join('');
+  const xl = `<text x="${L}" y="${H-6}" font-size="11" fill="var(--muted)">${when(h[0][0])}</text><text x="${W-R}" y="${H-6}" text-anchor="end" font-size="11" fill="var(--muted)">${when(h[h.length-1][0])}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Probabilità nel tempo">${grid}${lines}${xl}</svg>
+    <div class="leg"><span style="color:var(--c1)">1 (${esc(e.home)})</span><span style="color:var(--cx)">X</span><span style="color:var(--c2)">2 (${esc(e.away)})</span></div>`;
+}
+
+function showDetail() {
+  const e = D.events.find(x => x.id === selected);
+  if (!e) { $('#detail').innerHTML = ''; return; }
+  const rows = e.outcomes.map(o => `<tr>
+    <td><b>${o.name}</b></td>
+    <td>${o.odds_open.toFixed(2)} → <b>${o.odds.toFixed(2)}</b></td>
+    <td>${pc(o.prob_open)} → <b>${pc(o.prob)}</b></td>
+    <td class="${cls(o.ch_6h)}">${chg(o.ch_6h)}</td>
+    <td class="${cls(o.ch_24h)}">${chg(o.ch_24h)}</td>
+    <td>${Math.round(o.agree * 100)}%</td>
+    <td>${o.best.odds.toFixed(2)} <span class="sub">${esc(o.best.book)}</span></td>
+    <td>${o.pinnacle ? o.pinnacle.toFixed(2) : '–'}</td></tr>`).join('');
+  $('#detail').innerHTML = `<div class="card">
+    <h2>${esc(e.home)} – ${esc(e.away)}</h2>
+    <div class="sub">${esc(e.league)} · ${when(e.commence)} · ${e.books} bookmaker · fiducia ${e.confidence} · indice <b>${e.score}</b> (esito ${e.top})</div>
+    <div class="grid2"><div>${chart(e)}</div>
+    <div style="overflow-x:auto"><table class="mini"><thead><tr><th>Esito</th><th>Quota media</th><th>Prob. pulita</th><th>6 h</th><th>24 h</th><th>Book in calo</th><th>Miglior quota</th><th>Pinn.</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;
+}
+
+init();
+</script>
+</body>
+</html>
