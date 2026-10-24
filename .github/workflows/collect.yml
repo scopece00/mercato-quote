@@ -2,8 +2,8 @@ name: Raccogli quote
 
 on:
   schedule:
-    - cron: "7 */6 * * *"
-  workflow_dispatch:
+    - cron: "7 */3 * * *"   # ogni 3 ore; lo script salta da solo i giri non necessari
+  workflow_dispatch:         # permette di lanciarlo a mano dal pulsante "Run workflow"
 
 permissions:
   contents: write
@@ -30,7 +30,25 @@ jobs:
       - name: Raccolta quote
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
-        run: python collector.py --leagues soccer_italy_serie_a,soccer_italy_serie_b,soccer_epl,soccer_spain_la_liga
+        run: |
+          H=$(date -u +%H)
+          NOW=$(date -u +%Y%m%d%H)
+          FLAGS=""
+          if [ "$NOW" -lt 2026102608 ]; then
+            # MODALITA WEEKEND (fino a lunedi 26/10 alle 08 UTC): 1X2 + Over/Under + Goal/NoGoal
+            FLAGS="--markets totals,btts --btts-max 10 --btts-hours 30"
+            if [ "$GITHUB_EVENT_NAME" = "schedule" ] && { [ "$H" = "00" ] || [ "$H" = "03" ]; }; then
+              echo "Notte: salto questo giro per risparmiare crediti."
+              exit 0
+            fi
+          else
+            # DOPO IL WEEKEND: torna a un giro ogni 6 ore, solo 1X2
+            if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ $((10#$H % 6)) -ne 0 ]; then
+              echo "Fuori weekend: salto questo giro."
+              exit 0
+            fi
+          fi
+          python collector.py --leagues soccer_italy_serie_a,soccer_italy_serie_b,soccer_epl,soccer_spain_la_liga $FLAGS
 
       - name: Salva lo storico
         run: |
